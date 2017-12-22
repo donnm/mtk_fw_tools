@@ -52,7 +52,7 @@ def translate_bl_blx():
 
 def compress(bitNum, instr):
     print("in compress 0x%02x 0x%08x"%(bitNum, instr))
-    global buff, edi12h, ptr
+    global buff, edi12h, ptr, count
 
     instrAndSeven0ch = instr & 0xff
     if bitNum != 0:
@@ -75,6 +75,7 @@ def compress(bitNum, instr):
             buff[ptr] |= var1
             ptr += 1
             buff.append(0x00)
+            print("compress 1st buff.append")
             edi12h = 7
         elif var2 > 0:
             # Output
@@ -82,55 +83,11 @@ def compress(bitNum, instr):
             buff[ptr] |= (var1 >> var2) & 0xff
             ptr += 1
             buff.append(0x00)
-            if (ptr+1) % 0x100 == 0:
-                ptr += 1
-                buff.append(0x00)
-                var2 = instrAndSeven0ch
+            print("compress 2nd buff.append")
             # Output
             print("%d d %02x | %02x -> %02x"%(ptr, buff[ptr], var1  << (8 - var2 & 0xff) & 0xff, (buff[ptr] | var1  << (8 - var2 & 0xff) & 0xff) & 0xff))
             buff[ptr] |= var1  << ((8 - var2) & 0xff) & 0xff
             edi12h = 0x07 - var2
-'''
-        if var2 == 0:
-            # Output
-            print("%d a %02x | %02x -> %02x"%(ptr, buff[ptr], var1 & 0xff, (buff[ptr] | var1) & 0xff))
-            buff[ptr] |= var1 & 0xff
-            ptr += 1
-            buff.append(0x00)
-            edi12h = 7
-        elif (0xff & var2) >> 7:
-            var3 = var2
-            if (0xff & var2) >> 7:
-                var3 = var2 | 0xFFFFFF00
-            var3 = -var3 & 0xffffffff
-            var1 = var1 << var3
-            # Output
-            print("%d b %02x | %02x -> %02x"%(ptr, buff[ptr], var1 & 0xff, (buff[ptr] | var1) & 0xff))
-            buff[ptr] |= var1 & 0xff
-            edi12h -= bitNum
-        else:
-            var5 = var1 >> var2
-            # Output
-            print("%d c %02x | %02x -> %02x"%(ptr, buff[ptr], var5 & 0xff, (buff[ptr] | var5) & 0xff))
-            buff[ptr] |= var5 & 0xff
-            ptr += 1
-            buff.append(0x00)
-#            if ptr % 0x100 == 0 and ptr > 0:
-#                ptr += 1
-#                buff.append(0x00)
-#                var2 = instrAndSeven0ch
-            var3 = var2
-            if (0xff & var2) >> 7:
-                var3 = var2 | 0xFFFFFF00
-            var4 = 8 - var3
-            var1 = var1 << var4
-            var4 = 0x07
-            # Output
-            print("%d d %02x | %02x -> %02x"%(ptr, buff[ptr], var1 & 0xff, (buff[ptr] | var1) & 0xff))
-            buff[ptr] |= var1 & 0xff
-            var4 = var4 - var2
-            edi12h = var4 & 0xff
-'''
 
 edi12h = 0x07
 #buff = bytearray([0x00])
@@ -235,9 +192,11 @@ for instr in instrs:
     compress(bitnum, finstr)
 
     count += 1
-    if count % 0x20 == 0 and count > 0:
+    if count % 0x20 == 0 and count > 0 and edi12h != 0x07:
+        edi12h = 0x07
         ptr += 1
         buff.append(0x00)
+        print("buff.append")
         # Do some stuff here...
         print("encoded count %04x at blocksize 0x20"%(count))
 
