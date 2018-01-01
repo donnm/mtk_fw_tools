@@ -23,6 +23,7 @@ Requirements:
 Copyright 2018 Donn Morrison donn.morrison@gmail.com
 
 TODO:
+    - calc correct prefixes and lengths from range regs
     - untranslate BL and BLX instructions on decompress
     - find correct EOF and stop decoding
     - implement ALICE_1 decoding?
@@ -52,13 +53,15 @@ def bitunpack():
     global fout, instrdict, range_regs, bitbuff, mappings, alicebin, blocksize
     bitptr = 0
     starts = [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7]
-    prefixes = [0x0, 0x40, 0x100, 0x300, 0x800, 0x2800, 0x6000, 0x70000]
-    lengths = [0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x13]
+    if len(instrdict) == 7120: # FIXME do this dynamically, need more test cases
+        prefixes = [0x0, 0x40, 0x100, 0x300, 0x800, 0x2800, 0x6000, 0x70000] # when dictlen = 7120
+        lengths = [0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x13] # when dictlen = 7120
+    else: # FIXME
+        prefixes = [0x0, 0x40, 0x100, 0x300, 0x1000, 0x2800, 0x6000, 0x70000] # when dictlen = 7120+512
+        lengths = [0x07, 0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x0f, 0x13] # when dictlen = 7120+512, range 4 = 0x0a
     byteswritten = 0
     while int(bitptr/8) < mappings[-1]:
-    #while bitptr < len(bitbuff):
-#        if int(bitptr/8) in mappings:
-        if byteswritten % blocksize == 0 and (bitptr%8) != 0: # FIXME blocksize
+        if byteswritten % blocksize == 0 and (bitptr%8) != 0:
             print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d"%(byteswritten, int(bitptr/8),bitptr%8))
             sys.stdout.flush()
             print("--- %d"%(8-(bitptr%8)))
@@ -142,7 +145,7 @@ while reads < filesize - dict_offset:
     instrdict.append(instr)
     reads += 2
 
-print("read %d dictionary entries"%(int(reads/2)))
+print("read %d dictionary entries"%(len(instrdict)))
 print("--- first %s"%(instrdict[0:4]))
 print("--- last %s"%(instrdict[-1]))
 
