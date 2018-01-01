@@ -1,28 +1,56 @@
+#!/usr/bin/python3
+
+'''
+Alice compress
+
+Encode and pack Mediatek ALICE.bin into compressed firmware component
+
+ALICE.exe encoder steps
+    1. Read instructions from ALICE.bin (16-bits ARM Thumb)
+    2. Translate BL/BLX addresses
+    3. Add instructions, in order of appearance, to binary tree
+    4. Generate dictionary (histogram)
+    5. Range encode instructions
+    6. Bitpack range encoded instructions
+    7. Generate mapping table (24-bit pointers to individual blocks), low byte unknown
+    8. Postprocess, prepend header, append mapping table and dictionary, etc
+
+ALICE is range encoded (range registers contained in header) and then
+bitpacked. Each packed instruction has a 3-bit prefix denoting the range from
+which it comes and thus implicitly its length.
+
+Sets of packed instructions are divided into blocks, the size of which is
+contained in the header. When we encounter the end of a block, we must pad
+with zeros until the next byte offset.
+
+Requirements:
+    python3
+
+Copyright 2018 Donn Morrison donn.morrison@gmail.com
+
+TODO:
+    - determine correct sorting of dictionary histogram
+    - dynamically generate range registers
+    - implement ALICE_1 encoding?
+    - testing
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+'''
+
 import sys
 import struct
 from collections import Counter
-
-'''
-ALICE.exe encoder
-    1. Read instructions from ALICE.bin
-    2. Translate BL/BLX
-    3. Generate dictionary
-    4. Generate magic.bin bitnums, before_encoded.bin encoded instructions
-    5. Compress - iterate through translated instructions (as index), encode
-    6. Mapping table comes from bitpack() and blocksize, low byte unknown
-    7. Postprocess
-
-# magic.bin          - dictionary length array of lengths indexed by translated instruction
-# before_encoded.bin - ranged instructions (32-bit form) in dictionary indexed by
-#                      translated instruction
-#
-# TODO
-# - DoMagic13And70000 sorting based on BST?
-# - bitpack() end bytes (0x02) and padding
-#
-#
-'''
-
 
 def translate_bl_blx():
     global buff
@@ -128,17 +156,15 @@ f.write(buff)
 f.close()
 
 # Generate histogram
-# Need to make sure it is sorted in the same way ALICE.exe sorts,
-# that being that first by frequency, then for instructions of the
-# same frequency, possibly by instruction value, first location 
-# in ALICE.bin, or something else?
-# Most likely ALICE.exe gets the order from the way the BST
-# is traversed.
+# Need to make sure it is sorted in the same way ALICE.exe sorts, that being
+# that first by frequency, then for instructions in the same frequency bin,
+# possibly by instruction value, first location in ALICE.bin, or something
+# else? Most likely ALICE.exe gets the order from the way the BST is
+# traversed.
 
 # Construct fake ALICE.bin with a desired histogram and try to match
 # the output.
 instrs=[bytes(buff[i*2:i*2+2]) for i in range(int(len(buff)/2))]
-'''
 hist=Counter(instrs)
 shist=sorted(hist.items(), key=lambda x: (-x[1], x[0]))
 shist_f=[freq for instr,freq in shist]
@@ -182,7 +208,6 @@ for l,v in fshist.items():
     f.write(struct.pack("<L", v))
 
 f.close()
-'''
 
 # Try to encode!
 
