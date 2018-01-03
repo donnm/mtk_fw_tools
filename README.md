@@ -31,8 +31,8 @@ The decoder must do the reverse. In short, we read the compressed data as a bit 
 
 # Tools
 
-    - alice.py - pack ALICE partition (not working 100% yet, use ALICE.exe instead)
-    - unalice.py - unpack ALICE partition (working for ALICE_2 partition types except for some minor issues)
++ alice.py - pack ALICE partition (not working 100% yet, use ALICE.exe instead)
++ unalice.py - unpack ALICE partition (working for ALICE_2 partition types except for some minor issues)
 
 # Usage
 
