@@ -5,14 +5,14 @@ Set of tools to unpack/repack Mediatek firmware. Work in progress.
 The primary focus of developing these tools was to decompress the ALICE partition from Mediatek firmware blobs in order to inspect/reverse engineer the software on various devices (Smart watches, GSM trackers, cheap phones, etc.).
 
 A typical firmware dump consists of:
-    - Internal bootloader
-    - External bootloader (EXT_BOOTLOADER)
-    - Kernel (ROM)
-    - User partition (VIVA header)
-        - ZIMGE partition (ZIMAGE_ER - LZMA compressed resources)
-        - BOOT_ZIMAGE partition (usually empty)
-        - DCMCMP partition (LZMA compressed parts)
-        - ALICE partition (ALICE_1/ALICE_2 - main firmware, compressed)
++ Internal bootloader
++ External bootloader (EXT_BOOTLOADER)
++ Kernel (ROM)
++ User partition (VIVA header)
+    + ZIMGE partition (ZIMAGE_ER - LZMA compressed resources)
+    + BOOT_ZIMAGE partition (usually empty)
+    + DCMCMP partition (LZMA compressed parts)
+    + ALICE partition (ALICE_1/ALICE_2 - main firmware, compressed)
 
 The main (non-kernel) firmware of the device seems to lie in the ALICE partition which is range encoded and bitpacked ARM instructions. Until now this encoding was not public.
 
