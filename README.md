@@ -2,7 +2,7 @@
 
 Set of tools to unpack/repack Mediatek firmware. Work in progress.
 
-The primary focus of developing these tools was to decompress the ALICE partition from Mediatek firmware blobs in order to inspect/reverse engineer the software on various devices (Smart watches, GSM trackers, cheap phones, etc.).
+The primary focus of developing these tools was to decompress the ALICE partition from Mediatek firmware blobs in order to inspect/reverse engineer the software on various devices (smart watches, GSM trackers, cheap phones, etc.).
 
 A typical firmware dump consists of:
 + Internal bootloader
