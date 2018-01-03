@@ -53,6 +53,7 @@ If you have the firmware of your device, open it in a hex editor and search for 
 0017FF10   3F D5 F6 DF  E0 BB 8C CA  C2 D6 38 1E  05 33 9F CB  ?.........8..3..
 0017FF20   04 96 CC 6D  35 7E F0 F4  20 3C B8 46  0E 79 0E 27  ...m5~.. <.F.y.'
 0017FF30   9D 87 A6 4E  78 E2 03 B0  42 82 16 0C  CC 19 98 33  ...Nx...B......3
+...
 </pre>
 
 Cut the section out using `dd` (0x17FEE0 == 1572576):
@@ -68,3 +69,5 @@ $ python3 unalice.py ALICE
 ```
 
 Load the resulting `alice-translated-py.bin` into your favourite disassembler!
+
+Note: All BL and BLX instructions in the decoded file are not translated back to their original state. This should be implemented soon.
