@@ -17,14 +17,15 @@ A typical firmware dump consists of:
 The main (non-kernel) firmware of the device seems to lie in the ALICE partition which is range encoded and bitpacked ARM instructions. Until now this encoding was not public.
 
 Briefly, the encoder performs the following steps:
-    1. Read instructions from ALICE.bin (16-bits ARM Thumb)
-    2. Translate BL/BLX addresses
-    3. Add instructions, in order of appearance, to a binary tree
-    4. Generate dictionary (histogram)
-    5. Range encode instructions
-    6. Bitpack range encoded instructions
-    7. Generate mapping table (24-bit pointers to individual blocks), low byte unknown
-    8. Postprocess, prepend header, append mapping table and dictionary, etc
+
+1. Read instructions from ALICE.bin (16-bits ARM Thumb)
+2. Translate BL/BLX addresses
+3. Add instructions, in order of appearance, to a binary tree
+4. Generate dictionary (histogram)
+5. Range encode instructions
+6. Bitpack range encoded instructions
+7. Generate mapping table (24-bit pointers to individual blocks), low byte unknown
+8. Postprocess, prepend header, append mapping table and dictionary, etc
 
 The decoder must do the reverse. In short, we read the compressed data as a bit string, looking up each instruction in the dictionary to retrieve the uncompressed version as we proceed. The mapping table tells us when we have reached a block of $blocksize (typically 64 bytes, 32 instructions), at which point we skip to the next start-of-byte and proceed. Presumably this lets the firmware decode segments of the code as needed, without loading the entire image into memory.
 
