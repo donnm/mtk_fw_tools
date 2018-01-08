@@ -37,8 +37,8 @@ The decoder must do the reverse. In short, we read the compressed data as a bit 
 # Usage
 
 ## Requirements
-    python3
-    python3-bitstring
+    python (or python3)
+    python-bitstring (or python3-bitstring)
 
 If you have the firmware of your device, open it in a hex editor and search for the ALICE_2 string.
 

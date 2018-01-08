@@ -17,7 +17,7 @@ As each range encoded instruction is unpacked, we look it up in the dictionary
 appended to the end of ALICE to reveal the original instruction.
 
 Requirements:
-    python3
+    python
     bitstring for python https://github.com/scott-griffiths/bitstring
 
 Copyright 2018 Donn Morrison donn.morrison@gmail.com
