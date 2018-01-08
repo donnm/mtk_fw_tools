@@ -87,7 +87,8 @@ def bitunpack():
                     originstr = instr & 0xffff
                 print("original instruction 0x%04x written at 0x%08x"%(originstr,byteswritten))
                 decomp = struct.pack("<H", originstr)
-                byteswritten += fout.write(decomp)
+                fout.write(decomp)
+                byteswritten += len(decomp)
                 alicebin += bytearray(decomp)
                 bitptr += l
                 break
