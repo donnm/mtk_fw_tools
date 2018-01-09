@@ -23,11 +23,8 @@ Requirements:
 Copyright 2018 Donn Morrison donn.morrison@gmail.com
 
 TODO:
-    - calc correct prefixes and lengths from range regs
     - untranslate BL and BLX instructions on decompress
     - find correct EOF and stop decoding
-    - implement ALICE_1 decoding?
-    - testing
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -95,17 +92,30 @@ if len(sys.argv) < 2:
     sys.exit()
 
 f = open(sys.argv[1], "rb")
-version = f.read(8)
-if version.decode() != "ALICE_2\x00":
-    print("found %s, expected ALICE_2, quitting."%(version))
+magic = f.read(7)
+if magic == b'ALICE_1':
+    alice_version = 1
+elif magic == b'ALICE_2':
+    alice_version = 2
+else:
+    print("found %s, expected ALICE_2, quitting."%(magic))
     sys.exit(1)
-f.seek(8) # skip over ALICE_2
+print("found %s magic"%(magic))
+
+header_size = 40 # ALICE_2 or ALICE_1 with full header
+if alice_version == 1:
+    f.seek(36) # Check ALICE_1
+    endbytes = f.read(4)
+    if endbytes != b'\x00\x00\xff\xff':
+        header_size = 36 # ALICE_1 with short header
+
+f.seek(8)
 base, mapping_offset, dict_offset = struct.unpack("<LLL", f.read(12))
 f.seek(0,2)
 filesize = f.tell()
-mapping_offset -= base - 40
-dict_offset -= base - 40
-compressed_offset = 40
+mapping_offset -= base - header_size
+dict_offset -= base - header_size
+compressed_offset = header_size
 
 f.seek(20) # Range registers
 reads = 0
@@ -119,9 +129,12 @@ range_regs.append(16) # for infrequent instructions (0x70000 | instr) length 16+
 
 f.read(2)
 blocksize = struct.unpack("<H", f.read(2))[0]
+if blocksize == 0:
+    blocksize = 64
 
 print("filesize %d bytes"%(filesize))
 print("base 0x%08x"%(base))
+print("header length %d"%(header_size))
 print("blocksize %d bytes (%d instructions)"%(blocksize, blocksize/2))
 print("compressed @ 0x%08x, len 0x%08x"%(compressed_offset, mapping_offset - compressed_offset))
 print("maptable @ 0x%08x, len 0x%08x"%(mapping_offset, dict_offset - mapping_offset))
