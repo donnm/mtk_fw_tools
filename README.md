@@ -32,7 +32,7 @@ The decoder must do the reverse. In short, we read the compressed data as a bit 
 # Tools
 
 + alice.py - pack ALICE partition (not working 100% yet, use ALICE.exe instead)
-+ unalice.py - unpack ALICE partition (working for ALICE_2 partition types except for some minor issues)
++ unalice.py - unpack ALICE partition (working for ALICE_1, ALICE_2 partition types except for some minor issues)
 
 # Usage
 
@@ -40,7 +40,7 @@ The decoder must do the reverse. In short, we read the compressed data as a bit 
     python (or python3)
     python-bitstring (or python3-bitstring)
 
-If you have the firmware of your device, open it in a hex editor and search for the ALICE_2 string.
+If you have the firmware of your device, open it in a hex editor and search for the ALICE_1 or ALICE_2 string.
 
 <pre>
 ...
