@@ -52,16 +52,12 @@ from bitstring import BitArray
 def bitunpack():
     global fout, instrdict, range_regs, bitbuff, mappings, alicebin, blocksize
     bitptr = 0
-    starts = [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7]
-    if len(instrdict) == 7120: # FIXME do this dynamically, need more test cases
-        prefixes = [0x0, 0x40, 0x100, 0x300, 0x800, 0x2800, 0x6000, 0x70000] # when dictlen = 7120
-        lengths = [0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x13] # when dictlen = 7120
-    elif len(instrdict) == 7888:
-        prefixes = [0x0, 0x40, 0x100, 0x600, 0x1000, 0x2800, 0x6000, 0x70000] # when dictlen = 7888
-        lengths = [0x07, 0x09, 0x0a, 0x0c, 0x0d, 0x0e, 0x0f, 0x13]
-    else: # FIXME
-        prefixes = [0x0, 0x40, 0x100, 0x300, 0x1000, 0x2800, 0x6000, 0x70000] # when dictlen = 7120+512
-        lengths = [0x07, 0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x0f, 0x13] # when dictlen = 7120+512, range 4 = 0x0a
+
+    starts = range(0,8) # each 3 bits long
+    prefixes = [start << r for start,r in zip(starts, range_regs)]
+    lengths = [r + 3 for r in range_regs]
+    range_regs_pow = [0] + [int(math.pow(2, r)) for r in range_regs[0:-1]]
+
     byteswritten = 0
     while int(bitptr/8) < mappings[-1]:
         if byteswritten % blocksize == 0 and (bitptr%8) != 0:
@@ -76,7 +72,7 @@ def bitunpack():
                 print("%d (0x%x,%d): fetched instruction 0x%08x and prefix 0x%x, length %d"%(bitptr, int(bitptr/8), bitptr%8, instr, prefixes[starts.index(s)], l))
                 if s != 0x7:
                     # Find the range (have to sum previous ranges to get correct index)
-                    low = sum(range_regs[0:starts.index(s)+1])
+                    low = sum(range_regs_pow[0:starts.index(s)+1])
 #                    print("%s"%(range_regs[0:starts.index(s)+1]))
                     # Subtract the instruction prefix
                     instridx = instr - prefixes[starts.index(s)]
@@ -113,11 +109,13 @@ compressed_offset = 40
 
 f.seek(20) # Range registers
 reads = 0
-range_regs = [0]
+range_regs = []
 while reads < 7:
-    reg = int(math.pow(2, struct.unpack("<H", f.read(2))[0]))
+    #reg = int(math.pow(2, struct.unpack("<H", f.read(2))[0]))
+    reg = struct.unpack("<H", f.read(2))[0]
     range_regs.append(reg)
     reads += 1
+range_regs.append(16) # for infrequent instructions (0x70000 | instr) length 16+3=19
 
 f.read(2)
 blocksize = struct.unpack("<H", f.read(2))[0]
@@ -128,7 +126,7 @@ print("blocksize %d bytes (%d instructions)"%(blocksize, blocksize/2))
 print("compressed @ 0x%08x, len 0x%08x"%(compressed_offset, mapping_offset - compressed_offset))
 print("maptable @ 0x%08x, len 0x%08x"%(mapping_offset, dict_offset - mapping_offset))
 print("dictionary @ 0x%08x, len 0x%08x"%(dict_offset, filesize - dict_offset))
-print("range registers: %s"%(range_regs))
+print("range registers (encoded lengths): %s"%(range_regs))
 f.seek(compressed_offset) # size of ALICE header
 
 buff = bytearray(f.read(mapping_offset - compressed_offset))
