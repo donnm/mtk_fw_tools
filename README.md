@@ -68,6 +68,6 @@ Run unalice on the resulting file:
 $ python3 unalice.py ALICE
 ```
 
-Load the resulting `alice-translated-py.bin` into your favourite disassembler!
+Load the resulting `alice-py.bin` into your favourite disassembler!
 
 Note: All BL and BLX instructions in the decoded file are not translated back to their original target addresses. This should be implemented soon.
