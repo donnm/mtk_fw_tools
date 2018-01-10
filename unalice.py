@@ -23,7 +23,6 @@ Requirements:
 Copyright 2018 Donn Morrison donn.morrison@gmail.com
 
 TODO:
-    - untranslate BL and BLX instructions on decompress
     - find correct EOF and stop decoding
 
 This program is free software: you can redistribute it and/or modify
@@ -58,27 +57,27 @@ def bitunpack():
     byteswritten = 0
     while int(bitptr/8) < mappings[-1]:
         if byteswritten % blocksize == 0 and (bitptr%8) != 0:
-            print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d"%(byteswritten, int(bitptr/8),bitptr%8))
+#            print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d"%(byteswritten, int(bitptr/8),bitptr%8))
             sys.stdout.flush()
-            print("--- %d"%(8-(bitptr%8)))
+#            print("--- %d"%(8-(bitptr%8)))
             bitptr = bitptr + (8 - (bitptr%8))
-        print("next 64 bits: %s"%(format(bitbuff[bitptr:bitptr+64].uint, '#066b')))
+#        print("next 64 bits: %s"%(format(bitbuff[bitptr:bitptr+64].uint, '#066b')))
         for s,l in zip(starts,lengths):
             if bitbuff[bitptr:bitptr+3].uint == s:
                 instr = bitbuff[bitptr:bitptr+l].uint
-                print("%d (0x%x,%d): fetched instruction 0x%08x and prefix 0x%x, length %d"%(bitptr, int(bitptr/8), bitptr%8, instr, prefixes[starts.index(s)], l))
+#                print("%d (0x%x,%d): fetched instruction 0x%08x and prefix 0x%x, length %d"%(bitptr, int(bitptr/8), bitptr%8, instr, prefixes[starts.index(s)], l))
                 if s != 0x7:
                     # Find the range (have to sum previous ranges to get correct index)
                     low = sum(range_regs_pow[0:starts.index(s)+1])
 #                    print("%s"%(range_regs[0:starts.index(s)+1]))
                     # Subtract the instruction prefix
                     instridx = instr - prefixes[starts.index(s)]
-                    print("instruction index into range: %d, low = %d"%(low + instridx,low))
+#                    print("instruction index into range: %d, low = %d"%(low + instridx,low))
                     # This is the index into the range_reg subrange
                     originstr = instrdict[low + instridx]
                 else:
                     originstr = instr & 0xffff
-                print("original instruction 0x%04x written at 0x%08x"%(originstr,byteswritten))
+#                print("original instruction 0x%04x written at 0x%08x"%(originstr,byteswritten))
                 decomp = struct.pack("<H", originstr)
                 fout.write(decomp)
                 byteswritten += len(decomp)
@@ -86,6 +85,60 @@ def bitunpack():
                 bitptr += l
                 break
     return
+
+def untranslate_bl_blx():
+    global buff
+    ptr = 0 # ptr can be equiv to PC
+    bl_count = 0
+    blx_count = 0
+    while ptr < len(buff)/2-1:
+        if (ptr+1) % 32 == 0:
+            ptr += 1
+            continue
+
+        instr = buff[ptr*2] | (buff[ptr*2+1] << 8)
+        instr2 = buff[ptr*2+2] | (buff[ptr*2+3] << 8)
+
+        if (instr & 0xf800) == 0xf000:
+            if (instr2 & 0xf800) == 0xf800: # bit 12 = 1, BL instruction
+                upbits = 0xf800
+                bl_count += 1
+            elif (instr2 & 0xf800) == 0xe800: # bit 12 = 0, BLX instruction
+                upbits = 0xe800
+                blx_count += 1
+            else:
+                ptr += 1
+                continue
+
+            if instr & 0x400: # if J2 bit is set
+                # shift imm11 left 11 bits, add lower bits from imm10 + sign
+                # multiply by two, subtract 0x7ffffffe?
+                v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) + 0x7ffffffe # FIXME special case
+                v10 &= 0xffffffff
+            else:
+                # shift imm11 left 11 bits, add lower bits from imm10 + sign
+                # multiply by two, add 2
+                v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) - 0x00000002
+                v10 &= 0xffffffff
+
+#            print("-%d translated type 0x%04x from 0x%08x to 0x%08x"%(ptr, upbits, ((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1), v10))
+#            print("%d 0x%08x"%(ptr,v10))
+
+            # reassemble branch target
+            instr = (v10 >> 0x0b) & 0x7ff | 0xf000 # high bits
+            instr2 = (v10 >> 0) & 0x7ff | upbits   # low bits
+
+#            print("-translated 0x%04x to 0x%04x at 0x%x, diff = %d"%(buff[ptr*2] | buff[ptr*2+1] << 8, instr, ptr*2, (buff[ptr*2] | buff[ptr*2+1] << 8) - instr))
+            buff[ptr*2] = instr & 0xff
+            buff[ptr*2+1] = (instr >> 8) & 0xff
+#            print("-translated 0x%04x to 0x%04x at 0x%x, diff = %d"%(buff[ptr*2+2] | buff[ptr*2+3] << 8, instr2, ptr*2+2, (buff[ptr*2+2] | buff[ptr*2+3] << 8) - instr2))
+            buff[ptr*2+2] = instr2 & 0xff
+            buff[ptr*2+3] = (instr2 >> 8) & 0xff
+
+            ptr += 1
+        ptr += 1
+
+    print("translated %d bl and %d blx instructions"%(bl_count*2, blx_count*2))
 
 if len(sys.argv) < 2:
     print("usage: unalice.py <ALICE>")
@@ -175,7 +228,17 @@ alicebin = bytearray()
 
 sys.stdout.flush()
 
-bitunpack()
+try:
+    bitunpack()
+except:
+    pass
 
 fout.close()
+
+buff = alicebin
+untranslate_bl_blx()
+
+falicebin = open("alice-py.bin", "wb")
+falicebin.write(buff)
+falicebin.close()
 

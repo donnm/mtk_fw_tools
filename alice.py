@@ -54,7 +54,7 @@ from collections import Counter
 
 def translate_bl_blx():
     global buff
-    ptr = 0
+    ptr = 0 # ptr can be equiv to PC
     bl_count = 0
     blx_count = 0
     while ptr < len(buff)/2-1:
@@ -66,28 +66,36 @@ def translate_bl_blx():
         instr2 = buff[ptr*2+2] | (buff[ptr*2+3] << 8)
 
         if (instr & 0xf800) == 0xf000:
-            if (instr2 & 0xf800) == 0xf800:
+            if (instr2 & 0xf800) == 0xf800: # bit 12 = 1, BL instruction
                 upbits = 0xf800
                 bl_count += 1
-            elif (instr2 & 0xf800) == 0xe800:
+            elif (instr2 & 0xf800) == 0xe800: # bit 12 = 0, BLX instruction
                 upbits = 0xe800
                 blx_count += 1
             else:
                 ptr += 1
                 continue
 
-            if instr & 0x400:
+            if instr & 0x400: # if J2 bit is set
+                # shift imm11 left 11 bits, add lower bits from imm10 + sign
+                # multiply by two, subtract 0x7ffffffe?
                 v10 = 2 * (ptr + ((instr & 0x7ff) << 0x0b) + (instr2 & 0x7ff)) - 0x7ffffffe
             else:
+                # shift imm11 left 11 bits, add lower bits from imm10 + sign
+                # multiply by two, add 2
                 v10 = 2 * (ptr + ((instr & 0x7ff) << 0x0b) + (instr2 & 0x7ff)) + 0x00000002
 
-            instr = (v10 >> 0x0c) & 0x7ff | 0xf000
-            instr2 = (v10 >> 1) & 0x7ff | upbits
+#            print("-translated type 0x%04x from 0x%08x to 0x%08x"%(upbits, ((instr & 0x7ff) << 0x0b) + (instr2 & 0x7ff), v10))
+#            print("%d 0x%08x"%(ptr,((instr & 0x7ff) << 0x0b) + (instr2 & 0x7ff)))
 
-#            print("-translated 0x%04x to 0x%04x at 0x%x"%(buff[ptr*2] | buff[ptr*2+1] << 8, instr, ptr*2))
+            # reassemble branch target
+            instr = (v10 >> 0x0c) & 0x7ff | 0xf000 # high bits
+            instr2 = (v10 >> 1) & 0x7ff | upbits   # low bits
+
+#            print("-translated 0x%04x to 0x%04x at 0x%x, diff = %d"%(buff[ptr*2] | buff[ptr*2+1] << 8, instr, ptr*2, (buff[ptr*2] | buff[ptr*2+1] << 8) - instr))
             buff[ptr*2] = instr & 0xff
             buff[ptr*2+1] = (instr >> 8) & 0xff
-#            print("-translated 0x%04x to 0x%04x at 0x%x"%(buff[ptr*2+2] | buff[ptr*2+3] << 8, instr2, ptr*2+2))
+#            print("-translated 0x%04x to 0x%04x at 0x%x, diff = %d"%(buff[ptr*2+2] | buff[ptr*2+3] << 8, instr2, ptr*2+2, (buff[ptr*2+2] | buff[ptr*2+3] << 8) - instr2))
             buff[ptr*2+2] = instr2 & 0xff
             buff[ptr*2+3] = (instr2 >> 8) & 0xff
 
