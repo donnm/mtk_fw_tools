@@ -114,19 +114,17 @@ def untranslate_bl_blx():
                 # shift imm11 left 11 bits, add lower bits from imm10 + sign
                 # multiply by two, subtract 0x7ffffffe?
                 v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) + 0x7ffffffe # FIXME special case
-                v10 &= 0xffffffff
             else:
                 # shift imm11 left 11 bits, add lower bits from imm10 + sign
                 # multiply by two, add 2
                 v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) - 0x00000002
-                v10 &= 0xffffffff
 
 #            print("-%d translated type 0x%04x from 0x%08x to 0x%08x"%(ptr, upbits, ((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1), v10))
 #            print("%d 0x%08x"%(ptr,v10))
 
             # reassemble branch target
             instr = (v10 >> 0x0b) & 0x7ff | 0xf000 # high bits
-            instr2 = (v10 >> 0) & 0x7ff | upbits   # low bits
+            instr2 = v10 & 0x7ff | upbits   # low bits
 
 #            print("-translated 0x%04x to 0x%04x at 0x%x, diff = %d"%(buff[ptr*2] | buff[ptr*2+1] << 8, instr, ptr*2, (buff[ptr*2] | buff[ptr*2+1] << 8) - instr))
             buff[ptr*2] = instr & 0xff
