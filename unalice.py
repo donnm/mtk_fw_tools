@@ -43,11 +43,13 @@ import math
 import os
 import sys
 import struct
+import getopt
 from bitstring import BitArray
 
 def bitunpack():
-    global fout, instrdict, range_regs, bitbuff, mappings, alicebin, blocksize
+    global fout, instrdict, range_regs, bitbuff, mappings, mappingsbits, alicebin, blocksize
     bitptr = 0
+    lastbitptr = 0
 
     starts = range(0,8) # each 3 bits long
     prefixes = [start << r for start,r in zip(starts, range_regs)]
@@ -55,12 +57,18 @@ def bitunpack():
     range_regs_pow = [0] + [int(math.pow(2, r)) for r in range_regs[0:-1]]
 
     byteswritten = 0
-    while int(bitptr/8) < mappings[-1]:
-        if byteswritten % blocksize == 0 and (bitptr%8) != 0:
-#            print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d"%(byteswritten, int(bitptr/8),bitptr%8))
+    while bitptr < mappingsbits[-1]:
+    #while int(bitptr/8) < (mappings[-2])[0]*8 + mappings[-2][1]:
+       # if int(bitptr)/8 in [m for m,l in mappings]:
+       #     print("+++ hit a bitmapping %d"%(bitptr))
+        #if (byteswritten % blocksize) == 0 and (bitptr%8) != 0:
+        if blocksize != 0 and (byteswritten % blocksize) == 0 and (bitptr%8) != 0:
+#            print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d, %d"%(byteswritten, int(bitptr/8),bitptr%8, bitptr))
             sys.stdout.flush()
 #            print("--- %d"%(8-(bitptr%8)))
             bitptr = bitptr + (8 - (bitptr%8))
+        if bitptr == 437:
+            bitptr += 3
 #        print("next 64 bits: %s"%(format(bitbuff[bitptr:bitptr+64].uint, '#066b')))
         for s,l in zip(starts,lengths):
             if bitbuff[bitptr:bitptr+3].uint == s:
@@ -113,7 +121,7 @@ def untranslate_bl_blx():
             if instr & 0x400: # if J2 bit is set
                 # shift imm11 left 11 bits, add lower bits from imm10 + sign
                 # multiply by two, subtract 0x7ffffffe?
-                v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) + 0x7ffffffe # FIXME special case
+                v10 = int((((instr & 0x7ff) << 0x0c) + ((instr2 & 0x7ff) << 1))/2) - (ptr-1) + 0x7ffffffe
             else:
                 # shift imm11 left 11 bits, add lower bits from imm10 + sign
                 # multiply by two, add 2
@@ -138,11 +146,21 @@ def untranslate_bl_blx():
 
     print("translated %d bl and %d blx instructions"%(bl_count*2, blx_count*2))
 
-if len(sys.argv) < 2:
-    print("usage: unalice.py <ALICE>")
+# ALICE
+# -t ALICE
+
+notranslate = 0
+if len(sys.argv) == 3 and sys.argv[1] == "-t":
+    alicefile = sys.argv[2]
+    notranslate = 1
+elif len(sys.argv) == 2 and sys.argv[1] != "-t":
+    alicefile = sys.argv[1]
+elif len(sys.argv) < 2 or len(sys.argv) > 3:
+    print("usage: unalice.py [-t] <ALICE>")
+    print("       -t disable bl/blx addr translation (required for some images)")
     sys.exit()
 
-f = open(sys.argv[1], "rb")
+f = open(alicefile, "rb")
 magic = f.read(7)
 if magic == b'ALICE_1':
     alice_version = 1
@@ -179,9 +197,11 @@ while reads < 7:
 range_regs.append(16) # for infrequent instructions (0x70000 | instr) length 16+3=19
 
 f.read(2)
-blocksize = struct.unpack("<H", f.read(2))[0]
+blocksize = 0
+if header_size == 40:
+    blocksize = struct.unpack("<H", f.read(2))[0]
 if blocksize == 0:
-    blocksize = 64
+    blocksize = 64 # FIXME correct default for ALICE_1?
 
 print("filesize %d bytes"%(filesize))
 print("base 0x%08x"%(base))
@@ -198,11 +218,17 @@ buff = bytearray(f.read(mapping_offset - compressed_offset))
 reads = 0
 mappings = []
 while reads < dict_offset - mapping_offset:
-    mapping = (struct.unpack("<L", f.read(4))[0] - base) & 0x00ffffff
-    mappings.append(mapping)
+    mapping = struct.unpack("<L", f.read(4))[0]
+    addr = (mapping - base) & 0x00ffffff
+    length = mapping >> 24
+#    print("%s %x %d"%(format(length, '#010b'), length, length))
+    mappings.append((addr, length))
     reads += 4
 
-print("last mapping: 0x%08x"%(mappings[-1]))
+mappingsbits = [a*8 + b for a,b in mappings]
+#print(mappingsbits)
+
+print("last nonzero mapping: 0x%08x, len = %d"%(mappings[-2][0], mappings[-2][1]))
 
 reads = 0
 instrdict = []
@@ -226,15 +252,22 @@ alicebin = bytearray()
 
 sys.stdout.flush()
 
+print("unpacking alice...")
 try:
     bitunpack()
+    print("done")
 except:
     pass
 
 fout.close()
 
 buff = alicebin
-untranslate_bl_blx()
+if not notranslate:
+    print("bl/blx address translation...")
+    untranslate_bl_blx()
+    print("done")
+else:
+    print("skipping bl/blx address translation")
 
 falicebin = open("alice-py.bin", "wb")
 falicebin.write(buff)

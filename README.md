@@ -69,3 +69,5 @@ $ python3 unalice.py ALICE
 ```
 
 Load the resulting `alice-py.bin` into your favourite disassembler!
+
+If BL/BLX targets seem to not make sense in the disassembler, try using the `-t` option with `unalice.py`.
