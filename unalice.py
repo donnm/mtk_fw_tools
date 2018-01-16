@@ -47,49 +47,96 @@ import getopt
 from bitstring import BitArray
 
 def bitunpack():
-    global fout, instrdict, range_regs, bitbuff, mappings, mappingsbits, alicebin, blocksize
+    global fout, instrdict, range_regs, bitbuff, mappings, alicebin, blocksize
     bitptr = 0
-    lastbitptr = 0
+    numblocks = 0
+    byteswritten = 0
+    lastblockbitptr = 0
+    matchedblocks = 0
+    lastblock = False
+    lastinstr = None
 
+    # Range register dependent vectors:
+    #  starts 000, 001, ..., 111
+    #  prefixes are starts shifted by respective range reg
+    #  lengths are range encoded instruction lengths + starts
+    #  range_regs_pow dictionary boundaries (ranges)
     starts = range(0,8) # each 3 bits long
     prefixes = [start << r for start,r in zip(starts, range_regs)]
     lengths = [r + 3 for r in range_regs]
     range_regs_pow = [0] + [int(math.pow(2, r)) for r in range_regs[0:-1]]
 
-    byteswritten = 0
-    while bitptr < mappingsbits[-1]:
-    #while int(bitptr/8) < (mappings[-2])[0]*8 + mappings[-2][1]:
-       # if int(bitptr)/8 in [m for m,l in mappings]:
-       #     print("+++ hit a bitmapping %d"%(bitptr))
-        #if (byteswritten % blocksize) == 0 and (bitptr%8) != 0:
-        if blocksize != 0 and (byteswritten % blocksize) == 0 and (bitptr%8) != 0:
-#            print("--- hit a mapping entry at %d bytes written, compressed index 0x%08x, rem %d, %d"%(byteswritten, int(bitptr/8),bitptr%8, bitptr))
+    while bitptr < ((mappings[-1])[0] + mappings[-1][1])*8 and bitptr < len(bitbuff): # mapping table addr + len
+        # Check if we've done a block
+        if blocksize != 0 and (byteswritten % blocksize) == 0:
+#            print("--- hit a block at %d bytes written, compressed index 0x%08x, rem %d, %d"%(byteswritten, int(bitptr/8),bitptr%8, bitptr))
             sys.stdout.flush()
-#            print("--- %d"%(8-(bitptr%8)))
-            bitptr = bitptr + (8 - (bitptr%8))
-        if bitptr == 437:
-            bitptr += 3
+            # FFW to the next byte offset
+            if bitptr%8 != 0:
+                bitptr = bitptr + (8 - (bitptr%8))
+
+            # Check every even block against mapping table
+            if numblocks%2 == 0:
+#                print("--- corresponding maptable addr 0x%08x len %d"%(mappings[int(numblocks/2)][0], mappings[int(numblocks/2)][1]))
+                if int(bitptr/8) in [m for m,l in mappings]:
+                    matchedblocks += 1
+#                    print("   --- bitptr in mapping table! matchedblocks = %d"%(matchedblocks))
+#                else:
+#                    print("   --- bitptr 0x%08x NOT in mapping table!"%(int(bitptr/8)))
+#            print("--- ptr forwarded to next byte %d, numblocks = %d"%(bitptr, numblocks))
+#            print("--- distance to start of previous block %d bits (%d bytes)"%(bitptr-lastblockbitptr,int((bitptr-lastblockbitptr)/8)))
+            lastblockbitptr = bitptr
+            numblocks += 1
+            #if math.ceil(numblocks/2) == len(mappings) -1:
+#            print("--- at pos %02f"%((numblocks/2) / float(len(mappings)-1)))
+
+            # FIXME EOF detection is a hack based on observations.
+            # We first check if we're near the end of the compressed region,
+            # then lookahead for low 1 counts in the bit buffer, or observed
+            # EOF instruction sequence (0xeaff, 0x0000)
+            if (numblocks/2) / float(len(mappings)-1) > 0.999: # Somewhere near the end?
+                # We've reached possibly the last complete block
+                print("--- Possible last block, now scanning for EOF signature instructions")
+                lastblock = True
 #        print("next 64 bits: %s"%(format(bitbuff[bitptr:bitptr+64].uint, '#066b')))
+#        print("contains %d ones"%(bin(bitbuff[bitptr:bitptr+64].uint)[2:].count('1')))
+
+        # Look for instruction header
         for s,l in zip(starts,lengths):
             if bitbuff[bitptr:bitptr+3].uint == s:
+                # Fetch the range encoded instruction
                 instr = bitbuff[bitptr:bitptr+l].uint
 #                print("%d (0x%x,%d): fetched instruction 0x%08x and prefix 0x%x, length %d"%(bitptr, int(bitptr/8), bitptr%8, instr, prefixes[starts.index(s)], l))
+
+                # FIXME EOF detection is a hack based on observations.
+                # We first check if we're near the end of the compressed region,
+                # then lookahead for low 1 counts in the bit buffer, or observed
+                # EOF instruction sequence (0xeaff, 0x0000)
+                if (lastblock and bin(bitbuff[bitptr:bitptr+64].uint)[2:].count('1') < 2):
+                    print("--- Last block, mostly zero bits left (< 2 of 64). Stopping.")
+                    return
+                if (lastblock and instr == 1 and s == 0 and lastinstr == 0xeaff): # If we're left with mostly zeros, probably at end
+                    print("--- Last block, end instructions detected (0xeaff, 0x0000). Stopping.")
+                    return
+                # If encoded, look up in dictionary
                 if s != 0x7:
                     # Find the range (have to sum previous ranges to get correct index)
                     low = sum(range_regs_pow[0:starts.index(s)+1])
-#                    print("%s"%(range_regs[0:starts.index(s)+1]))
                     # Subtract the instruction prefix
                     instridx = instr - prefixes[starts.index(s)]
-#                    print("instruction index into range: %d, low = %d"%(low + instridx,low))
                     # This is the index into the range_reg subrange
                     originstr = instrdict[low + instridx]
                 else:
+                    # Not encoded, simply extract the instruction
                     originstr = instr & 0xffff
 #                print("original instruction 0x%04x written at 0x%08x"%(originstr,byteswritten))
+                lastinstr = originstr
                 decomp = struct.pack("<H", originstr)
+                # Write decoded instruction to buffer/file
                 fout.write(decomp)
                 byteswritten += len(decomp)
                 alicebin += bytearray(decomp)
+                # Advance pointer
                 bitptr += l
                 break
     return
@@ -220,12 +267,16 @@ mappings = []
 while reads < dict_offset - mapping_offset:
     mapping = struct.unpack("<L", f.read(4))[0]
     addr = (mapping - base) & 0x00ffffff
-    length = mapping >> 24
-#    print("%s %x %d"%(format(length, '#010b'), length, length))
+    length = mapping & 0xff000000
+    if length != 0:
+        length = (((mapping & 0xff000000)>>26) + (3*(blocksize/2) >> 3)) + 1 # FIXME hardcoded 26
+    print("mapping entry 0x%08x addr 0x%08x len %d"%(mapping, addr, length))
     mappings.append((addr, length))
     reads += 4
 
-mappingsbits = [a*8 + b for a,b in mappings]
+print("mappings length: %d"%(len(mappings)))
+
+#mappingsbits = [a + (((b>>0x1a) + 3*(blocksize/2) >> 3) + 1) for a,b in mappings]
 #print(mappingsbits)
 
 print("last nonzero mapping: 0x%08x, len = %d"%(mappings[-2][0], mappings[-2][1]))
@@ -253,11 +304,11 @@ alicebin = bytearray()
 sys.stdout.flush()
 
 print("unpacking alice...")
-try:
-    bitunpack()
-    print("done")
-except:
-    pass
+#try:
+bitunpack()
+print("done")
+#except:
+#    pass 
 
 fout.close()
 
@@ -269,7 +320,9 @@ if not notranslate:
 else:
     print("skipping bl/blx address translation")
 
+print("writing alice-py.bin %d bytes"%(len(buff)))
 falicebin = open("alice-py.bin", "wb")
 falicebin.write(buff)
 falicebin.close()
 
+print("done")
