@@ -269,7 +269,7 @@ while reads < dict_offset - mapping_offset:
     addr = (mapping - base) & 0x00ffffff
     length = mapping & 0xff000000
     if length != 0:
-        length = (((mapping & 0xff000000)>>26) + (3*(blocksize/2) >> 3)) + 1 # FIXME hardcoded 26
+        length = (((mapping & 0xff000000)>>26) + (3*int(blocksize/2) >> 3)) + 1 # FIXME hardcoded 26
     print("mapping entry 0x%08x addr 0x%08x len %d"%(mapping, addr, length))
     mappings.append((addr, length))
     reads += 4
