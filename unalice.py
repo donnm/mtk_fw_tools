@@ -18,12 +18,11 @@ appended to the end of ALICE to reveal the original instruction.
 
 Requirements:
     python
-    bitstring for python https://github.com/scott-griffiths/bitstring
 
 Copyright 2018 Donn Morrison donn.morrison@gmail.com
 
 TODO:
-    - find correct EOF and stop decoding
+    - (done) EOF is now derived from the mapping table, see bitunpack()
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,10 +43,30 @@ import os
 import sys
 import struct
 import getopt
-from bitstring import BitArray
+
+class BitBuf:
+    """Bit view over bytes: MSB first inside each byte, same order as the
+    BitArray slicing this replaces. len() is the number of bits."""
+
+    def __init__(self, data):
+        self.d = bytes(data)
+
+    def __len__(self):
+        return len(self.d) * 8
+
+    def peek(self, pos, n):
+        first = pos >> 3
+        need = (pos & 7) + n
+        chunk = self.d[first:first + (need + 7) // 8]
+        if len(chunk) * 8 < need:
+            chunk += b'\0' * ((need + 7) // 8 - len(chunk))
+        v = int.from_bytes(chunk, 'big')
+        return (v >> (len(chunk) * 8 - (pos & 7) - n)) & ((1 << n) - 1)
+
 
 def bitunpack():
     global fout, instrdict, range_regs, bitbuff, mappings, alicebin, blocksize
+    global total_blocks, mismatched
     bitptr = 0
     numblocks = 0
     byteswritten = 0
@@ -65,6 +84,7 @@ def bitunpack():
     prefixes = [start << r for start,r in zip(starts, range_regs)]
     lengths = [r + 3 for r in range_regs]
     range_regs_pow = [0] + [int(math.pow(2, r)) for r in range_regs[0:-1]]
+    lows = [sum(range_regs_pow[0:i+1]) for i in range(8)]
 
     while bitptr < ((mappings[-1])[0] + mappings[-1][1])*8 and bitptr < len(bitbuff): # mapping table addr + len
         # Check if we've done a block
@@ -75,11 +95,26 @@ def bitunpack():
             if bitptr%8 != 0:
                 bitptr = bitptr + (8 - (bitptr%8))
 
-            # Check every even block against mapping table
+            # Deterministic end of stream.
+            # The mapping table records the byte offset of every even block, so
+            # the number of blocks is exactly 2 * (number of real entries) and
+            # the decompressed size is that times blocksize. No guessing needed.
+            if numblocks >= total_blocks:
+                print("--- reached block %d of %d, end of stream"%(numblocks, total_blocks))
+                return
+
+            # Check every even block against its own mapping table entry.
+            # A direct index is both exact and O(1); the previous membership
+            # test scanned every entry for every block.
             if numblocks%2 == 0:
-#                print("--- corresponding maptable addr 0x%08x len %d"%(mappings[int(numblocks/2)][0], mappings[int(numblocks/2)][1]))
-                if int(bitptr/8) in [m for m,l in mappings]:
-                    matchedblocks += 1
+                idx = int(numblocks/2)
+                if idx < len(mappings):
+                    want = mappings[idx][0]
+                    got = int(bitptr/8)
+                    if want == got:
+                        matchedblocks += 1
+                    else:
+                        mismatched.append((numblocks, want, got))
 #                    print("   --- bitptr in mapping table! matchedblocks = %d"%(matchedblocks))
 #                else:
 #                    print("   --- bitptr 0x%08x NOT in mapping table!"%(int(bitptr/8)))
@@ -90,55 +125,36 @@ def bitunpack():
             #if math.ceil(numblocks/2) == len(mappings) -1:
 #            print("--- at pos %02f"%((numblocks/2) / float(len(mappings)-1)))
 
-            # FIXME EOF detection is a hack based on observations.
-            # We first check if we're near the end of the compressed region,
-            # then lookahead for low 1 counts in the bit buffer, or observed
-            # EOF instruction sequence (0xeaff, 0x0000)
-            if (numblocks/2) / float(len(mappings)-1) > 0.999: # Somewhere near the end?
-                # We've reached possibly the last complete block
-                print("--- Possible last block, now scanning for EOF signature instructions")
-                lastblock = True
 #        print("next 64 bits: %s"%(format(bitbuff[bitptr:bitptr+64].uint, '#066b')))
 #        print("contains %d ones"%(bin(bitbuff[bitptr:bitptr+64].uint)[2:].count('1')))
 
-        # Look for instruction header
-        for s,l in zip(starts,lengths):
-            if bitbuff[bitptr:bitptr+3].uint == s:
-                # Fetch the range encoded instruction
-                instr = bitbuff[bitptr:bitptr+l].uint
+        # The 3 bit prefix is the range index, so look the length up directly
+        # instead of testing all eight candidates.
+        s = bitbuff.peek(bitptr, 3)
+        l = lengths[s]
+        # Fetch the range encoded instruction
+        instr = bitbuff.peek(bitptr, l)
 #                print("%d (0x%x,%d): fetched instruction 0x%08x and prefix 0x%x, length %d"%(bitptr, int(bitptr/8), bitptr%8, instr, prefixes[starts.index(s)], l))
 
-                # FIXME EOF detection is a hack based on observations.
-                # We first check if we're near the end of the compressed region,
-                # then lookahead for low 1 counts in the bit buffer, or observed
-                # EOF instruction sequence (0xeaff, 0x0000)
-                if (lastblock and bin(bitbuff[bitptr:bitptr+64].uint)[2:].count('1') < 2):
-                    print("--- Last block, mostly zero bits left (< 2 of 64). Stopping.")
-                    return
-                if (lastblock and instr == 1 and s == 0 and lastinstr == 0xeaff): # If we're left with mostly zeros, probably at end
-                    print("--- Last block, end instructions detected (0xeaff, 0x0000). Stopping.")
-                    return
-                # If encoded, look up in dictionary
-                if s != 0x7:
-                    # Find the range (have to sum previous ranges to get correct index)
-                    low = sum(range_regs_pow[0:starts.index(s)+1])
-                    # Subtract the instruction prefix
-                    instridx = instr - prefixes[starts.index(s)]
-                    # This is the index into the range_reg subrange
-                    originstr = instrdict[low + instridx]
-                else:
-                    # Not encoded, simply extract the instruction
-                    originstr = instr & 0xffff
+        # If encoded, look up in dictionary
+        if s != 0x7:
+            # Range base, precomputed rather than summed per instruction
+            low = lows[s]
+            # Subtract the instruction prefix
+            instridx = instr - prefixes[s]
+            # This is the index into the range_reg subrange
+            originstr = instrdict[low + instridx]
+        else:
+            # Not encoded, simply extract the instruction
+            originstr = instr & 0xffff
 #                print("original instruction 0x%04x written at 0x%08x"%(originstr,byteswritten))
-                lastinstr = originstr
-                decomp = struct.pack("<H", originstr)
-                # Write decoded instruction to buffer/file
-                fout.write(decomp)
-                byteswritten += len(decomp)
-                alicebin += bytearray(decomp)
-                # Advance pointer
-                bitptr += l
-                break
+        lastinstr = originstr
+        # Collect output, written out once at the end
+        alicebin += struct.pack("<H", originstr)
+        byteswritten += 2
+        # Advance pointer
+        bitptr += l
+    print("--- stream exhausted at block %d of %d"%(numblocks, total_blocks))
     return
 
 def untranslate_bl_blx():
@@ -276,6 +292,13 @@ while reads < dict_offset - mapping_offset:
 
 print("mappings length: %d"%(len(mappings)))
 
+# Entries with a zero length field are sentinels, not blocks.
+real_mappings = [m for m in mappings if m[1] != 0]
+total_blocks = 2 * len(real_mappings)
+mismatched = []
+print("real mapping entries: %d, sentinels: %d"%(len(real_mappings), len(mappings) - len(real_mappings)))
+print("expecting %d blocks = %d bytes decompressed"%(total_blocks, total_blocks * blocksize))
+
 #mappingsbits = [a + (((b>>0x1a) + 3*(blocksize/2) >> 3) + 1) for a,b in mappings]
 #print(mappingsbits)
 
@@ -294,7 +317,7 @@ print("--- last %s"%(instrdict[-1]))
 
 f.close()
 
-bitbuff = BitArray(buff)
+bitbuff = BitBuf(buff)
 
 print("loaded compressed alice %d bytes"%(len(bitbuff)/8))
 
@@ -307,6 +330,15 @@ print("unpacking alice...")
 #try:
 bitunpack()
 print("done")
+fout.write(alicebin)
+
+print("block checkpoints: %d matched, %d mismatched"%(
+    int(total_blocks/2) - len(mismatched), len(mismatched)))
+if mismatched:
+    print("first mismatch: block %d, mapping table says 0x%08x, decoder at 0x%08x"%mismatched[0])
+print("decompressed %d bytes, expected %d (%s)"%(
+    len(alicebin), total_blocks * blocksize,
+    "match" if len(alicebin) == total_blocks * blocksize else "MISMATCH"))
 #except:
 #    pass 
 
